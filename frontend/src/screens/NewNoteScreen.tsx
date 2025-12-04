@@ -14,6 +14,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@navigation/AppNavigator';
+import noteService from '@services/noteService';
+import { Note } from '@types/index';
 
 type NewNoteScreenProps = NativeStackScreenProps<RootStackParamList, 'NewNote'>;
 
@@ -21,46 +23,70 @@ const NewNoteScreen: React.FC<NewNoteScreenProps> = ({ navigation, route }) => {
   const existingNote = route.params?.note;
   const [title, setTitle] = useState(existingNote?.title || '');
   const [content, setContent] = useState(existingNote?.content || '');
-  const [lastSaved, setLastSaved] = useState('10:45 AM');
+  const [lastSaved, setLastSaved] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // Auto-save functionality
-    const autoSaveInterval = setInterval(() => {
-      if (title || content) {
-        const now = new Date();
-        const hours = now.getHours();
-        const minutes = now.getMinutes();
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHours = hours % 12 || 12;
-        const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-        setLastSaved(`${formattedHours}:${formattedMinutes} ${ampm}`);
-      }
-    }, 30000); // Auto-save every 30 seconds
+    if (existingNote) {
+      const date = new Date(existingNote.updated_at);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const formattedHours = hours % 12 || 12;
+      const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+      setLastSaved(`${formattedHours}:${formattedMinutes} ${ampm}`);
+    }
+  }, [existingNote]);
 
-    return () => clearInterval(autoSaveInterval);
-  }, [title, content]);
-
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title.trim() && !content.trim()) {
       Alert.alert('Empty Note', 'Please add a title or content to save the note.');
       return;
     }
 
-    // TODO: Implement API call to save note
-    Alert.alert(
-      'Success',
-      'Note saved successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]
-    );
+    setSaving(true);
+    try {
+      if (existingNote) {
+        // Update existing note
+        await noteService.updateNote(existingNote.id, {
+          title: title.trim(),
+          content: content.trim(),
+        });
+        Alert.alert('Success', 'Note updated successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      } else {
+        // Create new note
+        await noteService.createNote({
+          title: title.trim(),
+          content: content.trim(),
+        });
+        Alert.alert('Success', 'Note created successfully!', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+
+      // Update last saved time
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const formattedHours = hours % 12 || 12;
+      const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
+      setLastSaved(`${formattedHours}:${formattedMinutes} ${ampm}`);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save note. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleBack = () => {
-    if (title || content) {
+    const hasChanges = existingNote
+      ? title !== existingNote.title || content !== existingNote.content
+      : title.trim() || content.trim();
+
+    if (hasChanges) {
       Alert.alert(
         'Unsaved Changes',
         'Do you want to save your changes?',
@@ -98,7 +124,9 @@ const NewNoteScreen: React.FC<NewNoteScreenProps> = ({ navigation, route }) => {
           <TouchableOpacity onPress={handleBack} style={styles.backButton}>
             <Text style={styles.backIcon}>‹</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Note</Text>
+          <Text style={styles.headerTitle}>
+            {existingNote ? 'Edit Note' : 'New Note'}
+          </Text>
           <View style={styles.placeholder} />
         </View>
 
@@ -132,15 +160,26 @@ const NewNoteScreen: React.FC<NewNoteScreenProps> = ({ navigation, route }) => {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.lastSavedText}>Last saved: {lastSaved}</Text>
+          {lastSaved ? (
+            <Text style={styles.lastSavedText}>Last saved: {lastSaved}</Text>
+          ) : (
+            <Text style={styles.lastSavedText}>Not saved yet</Text>
+          )}
           
           <TouchableOpacity
-            style={styles.saveButton}
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
             onPress={handleSave}
+            disabled={saving}
             activeOpacity={0.8}
           >
-            <Text style={styles.saveIcon}>✓</Text>
-            <Text style={styles.saveButtonText}>Save</Text>
+            {saving ? (
+              <Text style={styles.saveButtonText}>Saving...</Text>
+            ) : (
+              <>
+                <Text style={styles.saveIcon}>✓</Text>
+                <Text style={styles.saveButtonText}>Save</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -241,6 +280,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
 });
 
