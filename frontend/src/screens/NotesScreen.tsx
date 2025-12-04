@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,50 +7,85 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@navigation/AppNavigator';
+import { useAuth } from '@context/AuthContext';
+import noteService from '@services/noteService';
+import { Note } from '@types/index';
 
 type NotesScreenProps = NativeStackScreenProps<RootStackParamList, 'Notes'>;
 
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  date: string;
-}
-
 const NotesScreen: React.FC<NotesScreenProps> = ({ navigation }) => {
+  const { logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Mock data - replace with actual API call
-  const [notes, setNotes] = useState<Note[]>([
-    {
-      id: '1',
-      title: 'Project Ideas',
-      content: 'Brainstorming for the Q3 marketing campaign and new feature development....',
-      date: 'Yesterday',
-    },
-    {
-      id: '2',
-      title: 'Meeting Summary',
-      content: 'Key takeaways from the sync-up call, action items assigned to the team. Alex t...',
-      date: '2h ago',
-    },
-    {
-      id: '3',
-      title: 'Grocery List',
-      content: 'Milk, bread, eggs, cheese, avocados, chicken breast, quinoa, and vegetables f...',
-      date: 'October 26',
-    },
-    {
-      id: '4',
-      title: 'Book Recommendations',
-      content: '"Atomic Habits" by James Clear, "The Midnight Library" by Matt Haig, and...',
-      date: 'October 24',
-    },
-  ]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    loadNotes();
+  }, []);
+
+  const loadNotes = async () => {
+    try {
+      setLoading(true);
+      const data = await noteService.getAllNotes();
+      setNotes(data);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to load notes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadNotes();
+    setRefreshing(false);
+  };
+
+  const handleDeleteNote = async (id: number) => {
+    Alert.alert(
+      'Delete Note',
+      'Are you sure you want to delete this note?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await noteService.deleteNote(id);
+              setNotes(notes.filter(note => note.id !== id));
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete note');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            navigation.replace('Login');
+          },
+        },
+      ]
+    );
+  };
 
   const filteredNotes = notes.filter(
     (note) =>
@@ -66,19 +101,35 @@ const NotesScreen: React.FC<NotesScreenProps> = ({ navigation }) => {
     navigation.navigate('NewNote', { note });
   };
 
-  const renderNoteCard = ({ item }: { item: Note }) => (
-    <TouchableOpacity
-      style={styles.noteCard}
-      onPress={() => handleNotePress(item)}
-      activeOpacity={0.7}
-    >
-      <Text style={styles.noteTitle}>{item.title}</Text>
-      <Text style={styles.noteContent} numberOfLines={2}>
-        {item.content}
-      </Text>
-      <Text style={styles.noteDate}>{item.date}</Text>
-    </TouchableOpacity>
-  );
+  const renderNoteCard = ({ item }: { item: Note }) => {
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diff = now.getTime() - date.getTime();
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      
+      if (hours < 1) return 'Just now';
+      if (hours < 24) return `${hours}h ago`;
+      if (hours < 48) return 'Yesterday';
+      
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+    return (
+      <TouchableOpacity
+        style={styles.noteCard}
+        onPress={() => handleNotePress(item)}
+        onLongPress={() => handleDeleteNote(item.id)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.noteTitle}>{item.title}</Text>
+        <Text style={styles.noteContent} numberOfLines={2}>
+          {item.content}
+        </Text>
+        <Text style={styles.noteDate}>{formatDate(item.updated_at)}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -87,6 +138,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({ navigation }) => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Notes</Text>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
@@ -104,13 +158,26 @@ const NotesScreen: React.FC<NotesScreenProps> = ({ navigation }) => {
       </View>
 
       {/* Notes List */}
-      <FlatList
-        data={filteredNotes}
-        renderItem={renderNoteCard}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <Text>Loading notes...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredNotes}
+          renderItem={renderNoteCard}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No notes yet. Create your first note!</Text>
+            </View>
+          }
+        />
+      )}
 
       {/* Floating Action Button */}
       <TouchableOpacity
@@ -134,11 +201,23 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 16,
     backgroundColor: '#f1f5f9',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#0f172a',
+  },
+  logoutButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  logoutText: {
+    fontSize: 14,
+    color: '#ef4444',
+    fontWeight: '600',
   },
   searchContainer: {
     paddingHorizontal: 24,
@@ -219,6 +298,22 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: '#ffffff',
     fontWeight: '300',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
   },
 });
 

@@ -12,6 +12,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@navigation/AppNavigator';
+import { useAuth } from '@context/AuthContext';
 import CustomInput from '@components/CustomInput';
 import CustomButton from '@components/CustomButton';
 import Logo from '@components/Logo';
@@ -23,6 +24,7 @@ interface SignUpScreenProps {
 }
 
 const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
+  const { register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -70,11 +72,15 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
 
     setLoading(true);
     try {
-      // TODO: Implement API call to backend
-      // const response = await authService.register({ email, password });
+      // Extract username from email (before @)
+      const username = email.split('@')[0];
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await register({ 
+        email, 
+        username,
+        password, 
+        password2: confirmPassword 
+      });
       
       Alert.alert(
         'Success',
@@ -83,14 +89,13 @@ const SignUpScreen: React.FC<SignUpScreenProps> = ({ navigation }) => {
           {
             text: 'OK',
             onPress: () => {
-              // Navigate to Notes screen after successful signup
               navigation.navigate('Notes');
             },
           },
         ]
       );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create account. Please try again.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }

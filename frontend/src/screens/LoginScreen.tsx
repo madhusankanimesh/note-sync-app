@@ -12,6 +12,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@navigation/AppNavigator';
+import { useAuth } from '@context/AuthContext';
 import CustomInput from '@components/CustomInput';
 import CustomButton from '@components/CustomButton';
 import Logo from '@components/Logo';
@@ -23,6 +24,7 @@ interface LoginScreenProps {
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -62,16 +64,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
     setLoading(true);
     try {
-      // TODO: Implement API call to backend
-      // const response = await authService.login({ email, password });
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Navigate to Notes screen after successful login
+      await login({ email, password });
       navigation.navigate('Notes');
-    } catch (error) {
-      Alert.alert('Error', 'Invalid email or password. Please try again.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
     }
